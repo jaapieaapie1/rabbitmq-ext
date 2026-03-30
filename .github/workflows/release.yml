@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ["8.1", "8.2", "8.3", "8.4"]
+        php: ["8.1", "8.2", "8.3", "8.4", "8.5"]
         runner: [ubuntu-latest, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@v4
@@ -57,7 +57,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ["82", "83", "84"]
+        php: ["82", "83", "84", "85"]
         include:
           - php: "82"
             php_dot: "8.2"
@@ -65,6 +65,8 @@ jobs:
             php_dot: "8.3"
           - php: "84"
             php_dot: "8.4"
+          - php: "85"
+            php_dot: "8.5"
     steps:
       - uses: actions/checkout@v4
 
@@ -104,7 +106,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ["8.2", "8.3", "8.4"]
+        php: ["8.2", "8.3", "8.4", "8.5"]
     steps:
       - uses: actions/checkout@v4
 
@@ -142,7 +144,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ["8.1", "8.2", "8.3", "8.4"]
+        php: ["8.1", "8.2", "8.3", "8.4", "8.5"]
     steps:
       - uses: actions/checkout@v4
 
