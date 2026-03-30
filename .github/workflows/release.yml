@@ -82,6 +82,7 @@ jobs:
       - name: Build extension
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
+          export PHP=$(which php${{ matrix.php }})
           export PHP_CONFIG=$(which php-config${{ matrix.php }})
           RUSTFLAGS="-C target-feature=-crt-static" cargo build --release
 
@@ -120,6 +121,7 @@ jobs:
 
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             export PATH="$HOME/.cargo/bin:$PATH"
+            export PHP=$(which php${PHP_PKG})
             export PHP_CONFIG=$(which php-config${PHP_PKG})
 
             RUSTFLAGS="-C target-feature=-crt-static" cargo build --release
