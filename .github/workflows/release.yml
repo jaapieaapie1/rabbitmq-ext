@@ -71,7 +71,7 @@ jobs:
       - name: Install build dependencies
         run: |
           apk add --no-cache \
-            bash curl gcc musl-dev make zip github-cli \
+            bash curl gcc musl-dev make zip github-cli clang-dev \
             php${{ matrix.php }}-dev php${{ matrix.php }}-embed
 
       - name: Install Rust
@@ -82,7 +82,7 @@ jobs:
       - name: Build extension
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
-          export PHP=$(which php${{ matrix.php }})
+          export PHP_CONFIG=$(which php-config${{ matrix.php }})
           RUSTFLAGS="-C target-feature=-crt-static" cargo build --release
 
       - name: Package binary
@@ -115,12 +115,12 @@ jobs:
             PHP_PKG=$(echo "${{ matrix.php }}" | tr -d '.')
 
             apk add --no-cache \
-              bash curl gcc musl-dev make zip \
+              bash curl gcc musl-dev make zip clang-dev \
               php${PHP_PKG}-dev php${PHP_PKG}-embed
 
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             export PATH="$HOME/.cargo/bin:$PATH"
-            export PHP=$(which php${PHP_PKG})
+            export PHP_CONFIG=$(which php-config${PHP_PKG})
 
             RUSTFLAGS="-C target-feature=-crt-static" cargo build --release
 
