@@ -1,6 +1,16 @@
 # RabbitMQ-ext
 
-A PHP extension for consuming RabbitMQ queues, written in Rust using [ext-php-rs](https://github.com/davidcole1340/ext-php-rs) and [lapin](https://github.com/amqp-rs/lapin).
+A PHP extension for consuming RabbitMQ queues,
+written in Rust using [ext-php-rs](https://github.com/davidcole1340/ext-php-rs)
+and [lapin](https://github.com/amqp-rs/lapin).  
+
+## Why
+
+The benefit of this approach compared to implementing an RabbitMQ client in PHP
+is that we can multithread and thus keep sending heartbeats even though the php
+process is busy doing other things.  
+This makes it so the connection stays open even when you are processing a job
+that takes 30 minutes.
 
 ## Usage
 
