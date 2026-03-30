@@ -1,0 +1,21 @@
+{
+    "name": "jaapieaapie1/rabbitmq-ext",
+    "type": "php-ext",
+    "description": "A PHP extension for RabbitMQ, written in Rust using ext-php-rs and lapin",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.1"
+    },
+    "php-ext": {
+        "extension-name": "rabbitmq_ext",
+        "support-zts": false,
+        "download-url-method": ["pre-packaged-binary", "composer-default"],
+        "configure-options": [
+            {
+                "name": "enable-rabbitmq_ext",
+                "description": "Enable RabbitMQ extension (requires Rust/Cargo)",
+                "needs-value": false
+            }
+        ]
+    }
+}
