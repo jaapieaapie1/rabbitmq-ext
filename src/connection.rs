@@ -1,26 +1,29 @@
 use crate::consumer::Consumer;
-use crate::error::to_php_exception;
+use crate::error::{connection_exception, publish_exception};
 use crate::protocol::Command;
 use crate::worker;
+#[cfg(not(test))]
 use ext_php_rs::prelude::*;
+#[cfg(test)]
+use ext_php_rs::exception::PhpException;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 
 /// `RabbitMQ\Connection` — manages the background AMQP connection.
-#[php_class]
-#[php(name = "RabbitMQ\\Connection")]
+#[cfg_attr(not(test), php_class)]
+#[cfg_attr(not(test), php(name = "RabbitMQ\\Connection"))]
 pub struct Connection {
     command_tx: Option<UnboundedSender<Command>>,
     worker_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
-#[php_impl]
+#[cfg_attr(not(test), php_impl)]
 impl Connection {
     /// Connect to RabbitMQ. Blocks until connected or throws on failure.
     pub fn __construct(uri: &str) -> Result<Self, PhpException> {
         let (command_tx, handle) =
-            worker::spawn_worker(uri.to_string()).map_err(|e| to_php_exception(e))?;
+            worker::spawn_worker(uri.to_string()).map_err(connection_exception)?;
 
         Ok(Self {
             command_tx: Some(command_tx),
@@ -38,7 +41,7 @@ impl Connection {
         let tx = self
             .command_tx
             .as_ref()
-            .ok_or_else(|| to_php_exception("Connection closed"))?;
+            .ok_or_else(|| connection_exception("Connection closed"))?;
 
         let (delivery_tx, delivery_rx) = crossbeam_channel::unbounded();
 
@@ -51,7 +54,7 @@ impl Connection {
             prefetch_count: prefetch,
             delivery_tx,
         })
-        .map_err(|_| to_php_exception("Connection closed"))?;
+        .map_err(|_| connection_exception("Connection closed"))?;
 
         Ok(Consumer::new(tag, delivery_rx, tx.clone()))
     }
@@ -67,7 +70,7 @@ impl Connection {
         let tx = self
             .command_tx
             .as_ref()
-            .ok_or_else(|| to_php_exception("Connection closed"))?;
+            .ok_or_else(|| connection_exception("Connection closed"))?;
 
         let (confirm_tx, confirm_rx) = std::sync::mpsc::sync_channel(1);
 
@@ -78,12 +81,12 @@ impl Connection {
             headers: headers.unwrap_or_default(),
             confirm_tx: Some(confirm_tx),
         })
-        .map_err(|_| to_php_exception("Connection closed"))?;
+        .map_err(|_| connection_exception("Connection closed"))?;
 
         confirm_rx
             .recv()
-            .map_err(|_| to_php_exception("Connection closed"))?
-            .map_err(|e| to_php_exception(e))
+            .map_err(|_| connection_exception("Connection closed"))?
+            .map_err(publish_exception)
     }
 
     /// Publish a message without waiting for confirm. The message is guaranteed
@@ -98,7 +101,7 @@ impl Connection {
         let tx = self
             .command_tx
             .as_ref()
-            .ok_or_else(|| to_php_exception("Connection closed"))?;
+            .ok_or_else(|| connection_exception("Connection closed"))?;
 
         tx.send(Command::Publish {
             exchange: exchange.to_string(),
@@ -107,7 +110,7 @@ impl Connection {
             headers: headers.unwrap_or_default(),
             confirm_tx: None,
         })
-        .map_err(|_| to_php_exception("Connection closed"))
+        .map_err(|_| connection_exception("Connection closed"))
     }
 
     /// Check if the connection is still alive.

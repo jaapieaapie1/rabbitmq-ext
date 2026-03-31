@@ -3,7 +3,7 @@ use crossbeam_channel::Sender;
 use futures_lite::StreamExt;
 use lapin::options::*;
 use lapin::types::{AMQPValue, FieldTable, LongString, ShortString};
-use lapin::{BasicProperties, Channel, Connection, Consumer};
+use lapin::{BasicProperties, Channel, Confirmation, Connection, Consumer, PublisherConfirm};
 use std::collections::HashMap;
 use std::sync::mpsc as std_mpsc;
 use tokio::sync::mpsc as tokio_mpsc;
@@ -82,7 +82,7 @@ async fn worker_loop(
     let _ = startup_tx.send(Ok(()));
 
     let mut consumers: HashMap<String, (Consumer, Sender<WorkerEvent>)> = HashMap::new();
-    let mut pending_confirms: Vec<lapin::publisher_confirm::PublisherConfirm> = Vec::new();
+    let mut pending_confirms: Vec<PublisherConfirm> = Vec::new();
 
     loop {
         tokio::select! {
@@ -102,7 +102,7 @@ async fn worker_loop(
                     }
                     Some(Command::Unsubscribe { consumer_tag }) => {
                         if consumers.remove(&consumer_tag).is_some() {
-                            let _ = channel.basic_cancel(&consumer_tag, BasicCancelOptions::default()).await;
+                            let _ = channel.basic_cancel(consumer_tag.as_str().into(), BasicCancelOptions::default()).await;
                         }
                     }
                     Some(Command::Publish { exchange, routing_key, body, headers, confirm_tx }) => {
@@ -141,9 +141,9 @@ async fn worker_loop(
         let _ = tx.send(WorkerEvent::Error("Connection closed".into()));
     }
 
-    let _ = publish_channel.close(200, "Normal shutdown").await;
-    let _ = channel.close(200, "Normal shutdown").await;
-    let _ = connection.close(200, "Normal shutdown").await;
+    let _ = publish_channel.close(200, "Normal shutdown".into()).await;
+    let _ = channel.close(200, "Normal shutdown".into()).await;
+    let _ = connection.close(200, "Normal shutdown".into()).await;
 }
 
 async fn handle_subscribe(
@@ -170,8 +170,8 @@ async fn handle_subscribe(
 
     match channel
         .basic_consume(
-            &queue,
-            tag,
+            queue.as_str().into(),
+            tag.into(),
             BasicConsumeOptions::default(),
             FieldTable::default(),
         )
@@ -189,7 +189,7 @@ async fn handle_subscribe(
 
 async fn handle_publish(
     channel: &Channel,
-    pending_confirms: &mut Vec<lapin::publisher_confirm::PublisherConfirm>,
+    pending_confirms: &mut Vec<PublisherConfirm>,
     exchange: String,
     routing_key: String,
     body: Vec<u8>,
@@ -211,8 +211,8 @@ async fn handle_publish(
 
     match channel
         .basic_publish(
-            &exchange,
-            &routing_key,
+            exchange.as_str().into(),
+            routing_key.as_str().into(),
             BasicPublishOptions::default(),
             &body,
             properties,
@@ -223,10 +223,10 @@ async fn handle_publish(
             if let Some(tx) = confirm_tx {
                 // Blocking publish: await the confirm and send result back.
                 match confirm.await {
-                    Ok(lapin::publisher_confirm::Confirmation::Ack(_)) => {
+                    Ok(Confirmation::Ack(_)) => {
                         let _ = tx.send(Ok(()));
                     }
-                    Ok(lapin::publisher_confirm::Confirmation::Nack(_)) => {
+                    Ok(Confirmation::Nack(_)) => {
                         let _ = tx.send(Err("Publish nacked by broker".into()));
                     }
                     Ok(_) => {
@@ -269,7 +269,7 @@ async fn next_delivery(
             let mut next_fut = std::pin::pin!(consumer.next());
             match futures_lite::future::poll_once(&mut next_fut).await {
                 Some(Some(Ok(delivery))) => {
-                    let headers = extract_headers(&delivery);
+                    let headers = extract_headers(delivery.properties.headers().as_ref());
                     let event = WorkerEvent::Delivery {
                         delivery_tag: delivery.delivery_tag,
                         routing_key: delivery.routing_key.to_string(),
@@ -294,9 +294,9 @@ async fn next_delivery(
     }
 }
 
-fn extract_headers(delivery: &lapin::message::Delivery) -> HashMap<String, String> {
+fn extract_headers(headers: Option<&FieldTable>) -> HashMap<String, String> {
     let mut result = HashMap::new();
-    if let Some(headers) = delivery.properties.headers().as_ref() {
+    if let Some(headers) = headers {
         for (key, value) in headers.inner() {
             let str_val = match value {
                 AMQPValue::LongString(s) => String::from_utf8_lossy(s.as_bytes()).into_owned(),
@@ -316,4 +316,113 @@ fn extract_headers(delivery: &lapin::message::Delivery) -> HashMap<String, Strin
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lapin::types::{AMQPValue, FieldTable, LongString, ShortString};
+
+    #[test]
+    fn extract_headers_none() {
+        let result = extract_headers(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_headers_empty_table() {
+        let table = FieldTable::default();
+        let result = extract_headers(Some(&table));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_headers_long_string() {
+        let mut table = FieldTable::default();
+        table.insert(
+            ShortString::from("key"),
+            AMQPValue::LongString(LongString::from(b"hello" as &[u8])),
+        );
+        let result = extract_headers(Some(&table));
+        assert_eq!(result.get("key").unwrap(), "hello");
+    }
+
+    #[test]
+    fn extract_headers_short_string() {
+        let mut table = FieldTable::default();
+        table.insert(
+            ShortString::from("key"),
+            AMQPValue::ShortString(ShortString::from("world")),
+        );
+        let result = extract_headers(Some(&table));
+        assert_eq!(result.get("key").unwrap(), "world");
+    }
+
+    #[test]
+    fn extract_headers_boolean() {
+        let mut table = FieldTable::default();
+        table.insert(ShortString::from("t"), AMQPValue::Boolean(true));
+        table.insert(ShortString::from("f"), AMQPValue::Boolean(false));
+        let result = extract_headers(Some(&table));
+        assert_eq!(result.get("t").unwrap(), "true");
+        assert_eq!(result.get("f").unwrap(), "false");
+    }
+
+    #[test]
+    fn extract_headers_integer_types() {
+        let mut table = FieldTable::default();
+        table.insert(ShortString::from("si"), AMQPValue::ShortInt(42));
+        table.insert(ShortString::from("li"), AMQPValue::LongInt(100_000));
+        table.insert(ShortString::from("lli"), AMQPValue::LongLongInt(-99));
+        table.insert(ShortString::from("su"), AMQPValue::ShortUInt(7));
+        table.insert(ShortString::from("lu"), AMQPValue::LongUInt(999));
+        let result = extract_headers(Some(&table));
+        assert_eq!(result.get("si").unwrap(), "42");
+        assert_eq!(result.get("li").unwrap(), "100000");
+        assert_eq!(result.get("lli").unwrap(), "-99");
+        assert_eq!(result.get("su").unwrap(), "7");
+        assert_eq!(result.get("lu").unwrap(), "999");
+    }
+
+    #[test]
+    fn extract_headers_float_double() {
+        let mut table = FieldTable::default();
+        table.insert(ShortString::from("f"), AMQPValue::Float(1.5));
+        table.insert(ShortString::from("d"), AMQPValue::Double(2.75));
+        let result = extract_headers(Some(&table));
+        assert_eq!(result.get("f").unwrap(), "1.5");
+        assert_eq!(result.get("d").unwrap(), "2.75");
+    }
+
+    #[test]
+    fn extract_headers_timestamp() {
+        let mut table = FieldTable::default();
+        table.insert(ShortString::from("ts"), AMQPValue::Timestamp(1_700_000_000));
+        let result = extract_headers(Some(&table));
+        assert_eq!(result.get("ts").unwrap(), "1700000000");
+    }
+
+    #[test]
+    fn extract_headers_unknown_uses_debug() {
+        let mut table = FieldTable::default();
+        table.insert(ShortString::from("v"), AMQPValue::Void);
+        let result = extract_headers(Some(&table));
+        assert!(result.get("v").unwrap().contains("Void"));
+    }
+
+    #[test]
+    fn extract_headers_multiple() {
+        let mut table = FieldTable::default();
+        table.insert(
+            ShortString::from("a"),
+            AMQPValue::LongString(LongString::from(b"one" as &[u8])),
+        );
+        table.insert(ShortString::from("b"), AMQPValue::Boolean(true));
+        table.insert(ShortString::from("c"), AMQPValue::LongInt(42));
+        let result = extract_headers(Some(&table));
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.get("a").unwrap(), "one");
+        assert_eq!(result.get("b").unwrap(), "true");
+        assert_eq!(result.get("c").unwrap(), "42");
+    }
 }

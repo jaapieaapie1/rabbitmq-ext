@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::mpsc as std_mpsc;
 
 /// Commands sent from the PHP thread to the background worker.
+#[derive(Debug)]
 pub enum Command {
     Subscribe {
         queue: String,

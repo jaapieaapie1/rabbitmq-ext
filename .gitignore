@@ -33,3 +33,5 @@
 *.lo
 *.dep
 *.o
+
+/vendor
