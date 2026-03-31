@@ -1,0 +1,60 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      rabbitmq:
+        image: rabbitmq:4-management
+        env:
+          RABBITMQ_DEFAULT_USER: guest
+          RABBITMQ_DEFAULT_PASS: guest
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      RABBITMQ_URI: amqp://guest:guest@localhost:5672
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install PHP dev headers
+        run: sudo apt-get update && sudo apt-get install -y php8.4-dev
+
+      - name: Build extension
+        run: cargo build --release
+
+      - name: Run Rust tests
+        run: cargo test
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction
+
+      - name: Create test queues
+        run: |
+          for q in test_connection test_publish test_consume test_consume_each test_message; do
+            curl -sf -u guest:guest -X PUT "http://localhost:15672/api/queues/%2F/${q}" \
+              -H "content-type:application/json" -d '{"durable":false,"auto_delete":false}'
+          done
+
+      - name: Run tests
+        run: php -d extension=target/release/librabbitmq_ext.so vendor/bin/pest

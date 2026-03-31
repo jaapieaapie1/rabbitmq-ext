@@ -33,3 +33,6 @@
 *.lo
 *.dep
 *.o
+
+/vendor
+/.claude
