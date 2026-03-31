@@ -64,4 +64,8 @@ mod php_stubs {
     pub extern "C" fn zend_objects_store_del(_obj: *mut c_void) {}
     #[unsafe(no_mangle)]
     pub extern "C" fn zval_ptr_dtor(_zv: *mut c_void) {}
+    #[unsafe(no_mangle)]
+    pub extern "C" fn _emalloc(_size: usize) -> *mut c_void { std::ptr::null_mut() }
+    #[unsafe(no_mangle)]
+    pub extern "C" fn _efree(_ptr: *mut c_void) {}
 }
