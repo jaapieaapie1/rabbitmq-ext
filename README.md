@@ -12,6 +12,30 @@ process is busy doing other things.
 This makes it so the connection stays open even when you are processing a job
 that takes 30 minutes.
 
+## Support
+
+This package officially supports and is tested against PHP 8.1 - 8.5.
+
+## Installing
+
+To install the extension use PHP's official extension installer PIE.
+The extension is [published on packagist](https://packagist.org/packages/jaapieaapie1/rabbitmq-ext).  
+For most architecture php combinations prebuilt binaries are available
+(only PIE version > 1.4 supports downloading prebuilt binaries)  
+If your specific setup is not prebuilt
+[Rust's buildtools](https://rustup.rs/)
+are required to build this library.
+
+```bash
+pie install jaapieaapie1/rabbitmq-ext
+```
+
+For IDE's and PHPStan there are stubs available as a [composer package](https://packagist.org/packages/jaapieaapie1/rabbitmq-ext-stubs).  
+
+```bash
+composer require --dev jaapieaapie1/rabbitmq-ext-stubs
+```
+
 ## Usage
 
 ### Consuming messages
